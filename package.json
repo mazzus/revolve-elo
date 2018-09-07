@@ -1,0 +1,29 @@
+{
+  "name": "revolve-elo",
+  "version": "0.0.1",
+  "description": "A small program for keeping track of elo ratings for Revolve's pingpong table",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mazzus/revolve-elo.git"
+  },
+  "author": "Marius Hamre Nordrik <marius@nordrik.com>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mazzus/revolve-elo/issues"
+  },
+  "homepage": "https://github.com/mazzus/revolve-elo#readme",
+  "dependencies": {
+    "body-parser": "^1.18.3",
+    "commander": "^2.18.0",
+    "elo-rank": "^1.0.3",
+    "express": "^4.16.3",
+    "joi": "^13.6.0"
+  },
+  "bin": {
+    "revolve-elo": "src/index.js"
+  }
+}
