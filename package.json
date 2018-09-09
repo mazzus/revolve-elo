@@ -21,7 +21,8 @@
     "commander": "^2.18.0",
     "elo-rank": "^1.0.3",
     "express": "^4.16.3",
-    "joi": "^13.6.0"
+    "joi": "^13.6.0",
+    "moment": "^2.22.2"
   },
   "bin": {
     "revolve-elo": "src/index.js"

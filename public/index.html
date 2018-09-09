@@ -1,16 +1,41 @@
 <!DOCTYPE html>
 <html>
+
 <body>
 
-<h1>Add match</h1>
+    <h1>Add match</h1>
 
-<form action="/match" method="POST">
-    <input name="player1" value="test1" type="text" />
-    <input name="player2" value="test2" type="text" />
-    <input name="winner" value="1" type="number" />
-    <input name="date" value="10/28/1996" type="date" />
-    <input type="submit" />
-</form>
+    <form action="/match" method="POST">
+        <table>
+            <tr>
+                <td>Player1</td>
+                <td><input name="player1" value="test1" type="text" /></td>
+            </tr>
+            <tr>
+                <td>Player2</td>
+                <td><input name="player2" value="test2" type="text" /></td>
+            </tr>
+            <tr>
+                <td>Winner(1/2)</td>
+                <td><input name="winner" value="1" type="number" /></td>
+            </tr>
+            <tr>
+                <td>Day</td>
+                <td><input name="day" value="1" type="number" /></td>
+            </tr>
+            <tr>
+                <td>Month</td>
+                <td><input name="month" value="9" type="number" /></td>
+            </tr>
+            <tr>
+                <td>Year</td>
+                <td><input name="year" value="2018" type="number" /></td>
+            </tr>
+
+        </table>
+        <input type="submit" />
+    </form>
 
 </body>
+
 </html>
