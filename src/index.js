@@ -1,98 +1,109 @@
 #!/usr/bin/env node
 
-const fs = require("fs");
 const express = require("express");
 const app = express();
-var bodyParser = require("body-parser");
+const bodyParser = require("body-parser");
+const config = require("./config");
 
-var EloRank = require("elo-rank");
+const EloRank = require("elo-rank");
 const joi = require("joi");
 const moment = require("moment");
+const fs = require("fs");
 
-const MatchFile = "./matches.csv";
-const SeasonFirstDay = moment("28.8.2018", "DD.MM.YYYY");
+const { plotWeeklyStats, plotWeeklyStatsForAllWeeks } = require("./plot");
+const { Match, LoadMatches, SaveMatch } = require("./match");
+
+const {seasonStart, defaultElo} = config;
 
 elo = new EloRank();
 
-class Match {
-  constructor(player1, player2, winner, day) {
-    this.player1 = player1;
-    this.player2 = player2;
-    this.winner = winner;
-    this.day = day;
+function UpdatePlayerStats(match, playerStats) {
+  const { player1, player2, winner } = match;
+  let player1Count = playerStats.hasOwnProperty(player1)
+    ? playerStats[player1]
+    : { won: 0, lost: 0 };
+  let player2Count = playerStats.hasOwnProperty(player2)
+    ? playerStats[player2]
+    : { won: 0, lost: 0 };
+
+  if (winner === 1) {
+    player1Count.won += 1;
+    player2Count.lost += 1;
+  } else {
+    player1Count.lost += 1;
+    player2Count.won += 1;
   }
-}
 
-function SaveMatch(match) {
-  fs.appendFileSync(MatchFile, `${match.player1},${match.player2},${match.winner},${match.day}\n`, "utf8");
-}
+  playerStats[player1] = player1Count;
+  playerStats[player2] = player2Count;
 
-function LoadMatches() {
-  let fileContent = "";
-  try {
-    fileContent = fs.readFileSync(MatchFile, "utf8");
-  } catch (err) {}
-
-  const lines = fileContent.split("\n");
-  return lines
-    .map(line => {
-      const lineParts = line.split(",");
-      if (lineParts.length != 4) {
-        console.warn(`Skipping line: \"${line}\"`);
-        return null;
-      }
-      const [player1, player2, winner, day] = lineParts;
-      return new Match(player1, player2, winner, day);
-    })
-    .filter(match => match != null);
-}
-
-function CalculateElos(matches) {
-  console.debug("Elos");
-  let playerRatings = {};
-
-  for (const match of matches) {
-    playerRatings = UpdateElos(playerRatings, match);
-  }
-  return playerRatings;
-}
-
-function CreatePlayerStats(matches) {
-  let playerStats = {};
-  for (const match of matches) {
-    const { player1, player2, winner } = match;
-    let player1Count = playerStats.hasOwnProperty(player1) ? playerStats[player1] : { won: 0, lost: 0 };
-    let player2Count = playerStats.hasOwnProperty(player2) ? playerStats[player2] : { won: 0, lost: 0 };
-
-    if (winner == 1) {
-      player1Count.won += 1;
-      player2Count.lost += 1;
-    } else {
-      player1Count.lost += 1;
-      player2Count.won += 1;
-    }
-
-    playerStats[player1] = player1Count;
-    playerStats[player2] = player2Count;
-  }
   return playerStats;
 }
 
 function UpdateElos(playerRatings, match) {
-  const defaultElo = 1000;
+  
 
   const { player1, player2, winner } = match;
-  const player1Rating = playerRatings.hasOwnProperty(player1) ? playerRatings[player1] : defaultElo;
-  const player2Rating = playerRatings.hasOwnProperty(player2) ? playerRatings[player2] : defaultElo;
-  const expectedScore1 = elo.getExpected(player1Rating, player2Rating);
-  const expectedScore2 = elo.getExpected(player2Rating, player1Rating);
+  const player1Rating = playerRatings.hasOwnProperty(player1)
+    ? playerRatings[player1]
+    : defaultElo;
+  const player2Rating = playerRatings.hasOwnProperty(player2)
+    ? playerRatings[player2]
+    : defaultElo;
+  const expected1 = elo.getExpected(player1Rating, player2Rating);
+  const expected2 = elo.getExpected(player2Rating, player1Rating);
 
-  const player1NewRating = elo.updateRating(expectedScore1, winner == 1 ? 1 : 0, player1Rating);
-  const player2NewRating = elo.updateRating(expectedScore2, winner == 2 ? 1 : 0, player2Rating);
+  const player1NewRating = elo.updateRating(
+    expected1,
+    winner === 1 ? 1 : 0,
+    player1Rating
+  );
+  const player2NewRating = elo.updateRating(
+    expected2,
+    winner === 2 ? 1 : 0,
+    player2Rating
+  );
   playerRatings[player1] = player1NewRating;
   playerRatings[player2] = player2NewRating;
 
   return playerRatings;
+}
+
+function divideMatchesPerWeek(matches) {
+  const latestDay = matches[matches.length - 1].day;
+
+  const latestWeek = Math.floor(latestDay / 7);
+
+  let weeks = [];
+  for (let i = 0; i < latestWeek + 1; i++) {
+    weeks.push([]);
+  }
+
+  for (let match of matches) {
+    const week = Math.floor(match.day / 7);
+    weeks[week].push(match);
+  }
+
+  return weeks;
+}
+
+function createWeeklyStats(weeks) {
+  let playerRatings = {};
+  let playerStats = {};
+  let weeklyStats = [];
+
+  for (const week of weeks) {
+    for (const match of week) {
+      playerRatings = UpdateElos(playerRatings, match);
+      playerStats = UpdatePlayerStats(match, playerStats);
+    }
+    weeklyStats.push({
+      playerRatings: Object.assign({}, playerRatings),
+      playerStats: Object.assign({}, playerStats)
+    });
+  }
+
+  return weeklyStats;
 }
 
 function validationMiddleware(schema) {
@@ -101,12 +112,11 @@ function validationMiddleware(schema) {
       if (!req.body) {
         throw new Error("No body provided");
       }
-      console.debug({ body: req.body });
+
       const validatedBody = await joi.validate(req.body, schema);
       req.body = validatedBody;
       next();
     } catch (err) {
-      console.error(err);
       res.status(400).send(err);
     }
   };
@@ -119,33 +129,32 @@ const postMatchSchema = {
     .integer()
     .min(1)
     .max(2)
-    .required(),
-  day: joi.number().required(),
-  month: joi.number().required(),
-  year: joi.number().required()
+    .required()
 };
 
 app.use(express.static("public"));
 app.use(bodyParser.urlencoded({ extended: true }));
 
-app.post("/match", validationMiddleware(postMatchSchema), async (req, res) => {
-  const { player1, player2, winner, day, month, year } = req.body;
+app.post(
+  "/match",
+  validationMiddleware(postMatchSchema),
+  async (req, res, next) => {
+    const { player1, player2, winner } = req.body;
 
-  const matchDay = moment(`${day}.${month}.${year}`, "DD.MM.YYYY");
-  const daysSinceSeasonStart = matchDay.diff(SeasonFirstDay, "days");
-  console.debug({ daysSinceSeasonStart });
-  const match = new Match(player1, player2, winner, daysSinceSeasonStart);
-  console.log({ body: req.body });
-  SaveMatch(match);
-  res.sendStatus(201);
-});
+    const matchDay = moment();
+    const daysSinceSeasonStart = matchDay.diff(seasonStart, "days");
 
-app.get("/scoreboard", (req, res) => {
-  const matches = LoadMatches();
-  const eloMap = CalculateElos(matches);
+    const match = new Match(player1.toLowerCase(), player2.toLowerCase(), winner, daysSinceSeasonStart);
+
+    SaveMatch(match);
+    res.redirect("./matchcreated.html");
+  }
+);
+
+function createScoreboard(playerRatings, playerStats) {
   const scoreBoard = [];
-  for (const player of Object.keys(eloMap)) {
-    scoreBoard.push({ name: player, score: eloMap[player] });
+  for (const player of Object.keys(playerRatings)) {
+    scoreBoard.push({ name: player, score: playerRatings[player] });
   }
   scoreBoard
     .sort((a, b) => {
@@ -159,19 +168,43 @@ app.get("/scoreboard", (req, res) => {
     })
     .reverse();
 
-  const stats = CreatePlayerStats(matches);
   const text = scoreBoard.reduce((acc, entry, index) => {
-    const playerStats = stats[entry.name];
-    return acc + createScoreBoardLine(index + 1, entry.name, entry.score, playerStats.won, playerStats.lost);
+    const stats = playerStats[entry.name];
+    return (
+      acc +
+      createScoreBoardLine(
+        index + 1,
+        entry.name,
+        entry.score,
+        stats.won,
+        stats.lost
+      )
+    );
   }, createScoreBoardLine());
-  console.log(text);
-  res.header("Content-Type", "text/plain");
-  res.send(text);
-});
+  return text;
+}
+
+function createWeeklyScoreboards(weeklyStats) {
+  let index = 0;
+  for (const weeklyStat of weeklyStats) {
+    const text = createScoreboard(
+      weeklyStat.playerRatings,
+      weeklyStat.playerStats
+    );
+    fs.writeFileSync(`week-${index}-scoreboard.txt`, text);
+    index++;
+  }
+}
 
 function createScoreBoardLine(position, name, score, won, lost) {
   let total;
-  if (position == undefined || name == undefined || score == undefined || won == undefined || lost == undefined) {
+  if (
+    position === undefined ||
+    name === undefined ||
+    score === undefined ||
+    won === undefined ||
+    lost === undefined
+  ) {
     position = "pos";
     name = "name";
     score = "score";
@@ -184,7 +217,7 @@ function createScoreBoardLine(position, name, score, won, lost) {
 
   return (
     `${position}`.padStart(3, " ") +
-    "\t" +
+    "   " +
     `${name}`.padEnd(15, " ") +
     `${score}`.padStart(6, " ") +
     `${won}`.padStart(8, " ") +
@@ -194,13 +227,11 @@ function createScoreBoardLine(position, name, score, won, lost) {
   );
 }
 
-app.get("/counts", (req, res) => {
-  res.json(CountPlayerMatches(LoadMatches()));
-});
 
-app.get("/matches", (req, res) => {
-  res.json(LoadMatches());
-});
+const weeklyStats = createWeeklyStats(divideMatchesPerWeek(LoadMatches()));
+plotWeeklyStatsForAllWeeks(weeklyStats);
+
+createWeeklyScoreboards(weeklyStats);
 
 const port = 3000;
 app.listen(port);

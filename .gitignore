@@ -1,5 +1,8 @@
 matches.csv
 
+*.png
+*.txt
+
 # Logs
 logs
 *.log
